@@ -6,11 +6,9 @@
 /*   By: luricci <luricci@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/06/22 16:20:05 by luricci           #+#    #+#             */
-/*   Updated: 2026/07/02 16:20:13 by luricci          ###   ########.fr       */
+/*   Updated: 2026/07/03 17:50:34 by luricci          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
-
-
 
 #include "codexion.h"
 
@@ -35,7 +33,7 @@ int	sim_stopped(t_sim *sim)
 int	log_state(t_coder *c, const char *msg)
 {
 	long	ts;
-	int		stopped;
+	long	stopped;
 
 	pthread_mutex_lock(&c->sim->print_mtx);
 	pthread_mutex_lock(&c->sim->sim_mtx);

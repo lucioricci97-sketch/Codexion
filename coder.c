@@ -6,10 +6,9 @@
 /*   By: luricci <luricci@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/06/22 16:15:18 by luricci           #+#    #+#             */
-/*   Updated: 2026/07/02 16:17:44 by luricci          ###   ########.fr       */
+/*   Updated: 2026/07/03 17:51:18 by luricci          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
-
 
 #include "codexion.h"
 
@@ -20,33 +19,22 @@ static int	do_compile(t_coder *c)
 	pthread_mutex_unlock(&c->mtx);
 	if (log_state(c, "is compiling"))
 	{
-		release_dongles(c);
+		release_one(c->low);
+		release_one(c->high);
 		return (ERR);
 	}
 	if (precise_sleep(c, (long)c->sim->args.t_compile * 1000L))
 	{
-		release_dongles(c);
+		release_one(c->low);
+		release_one(c->high);
 		return (ERR);
 	}
 	pthread_mutex_lock(&c->mtx);
 	c->compiles++;
 	pthread_mutex_unlock(&c->mtx);
-	release_dongles(c);
+	release_one(c->low);
+	release_one(c->high);
 	return (OK);
-}
-
-static int	do_debug(t_coder *c)
-{
-	if (log_state(c, "is debugging"))
-		return (ERR);
-	return (precise_sleep(c, (long)c->sim->args.t_debug * 1000L));
-}
-
-static int	do_refactor(t_coder *c)
-{
-	if (log_state(c, "is refactoring"))
-		return (ERR);
-	return (precise_sleep(c, (long)c->sim->args.t_refactor * 1000L));
 }
 
 static void	wait_for_start(t_coder *c)
@@ -81,7 +69,11 @@ void	*coder_routine(void *arg)
 			return (NULL);
 		if (do_compile(c))
 			return (NULL);
-		if (do_debug(c) || do_refactor(c))
+		if (log_state(c, "is debugging")
+			|| precise_sleep(c, (long)c->sim->args.t_debug * 1000L))
+			return (NULL);
+		if (log_state(c, "is refactoring")
+			|| precise_sleep(c, (long)c->sim->args.t_refactor * 1000L))
 			return (NULL);
 	}
 	return (NULL);

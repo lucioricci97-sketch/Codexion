@@ -192,7 +192,9 @@ typedef struct s_request { int id; long key; } t_request;
 typedef struct s_heap    { t_request items[2]; int size; } t_heap;
 ```
 
-One slot in the heap is a (coder id, sort key) pair. Heap size is at most 2 because **only two neighbors ever compete for the same dongle**.
+Each dongle owns a binary min-heap used to arbitrate competing requests.
+
+Although the heap implementation follows the standard binary heap algorithm, its maximum size is only **2**, because a dongle can only ever be requested by its two neighboring coders. The implementation therefore remains fully generic while staying extremely lightweight for this specific problem.
 
 ```c
 struct s_dongle {
@@ -485,16 +487,21 @@ Locks, sets `available = 1` and `last_release = now`, broadcasts so any waiter r
 int acquire_dongles(t_coder *c)
 ```
 
-The whole acquisition sequence:
+The acquisition sequence is intentionally performed in two stages:
 
-1. Build the key for the **low** dongle.
-2. Register on the low dongle's heap.
-3. Wait for `low`. If sim stopped → bail (nothing held yet).
-4. Print `has taken a dongle`. If logging fails (sim stopped) → release `low`, bail.
-5. Refresh the key, register on the **high** dongle's heap.
-6. Wait for `high`. If sim stopped → release `low`, bail.
-7. Print `has taken a dongle`. If logging fails → release both, bail.
-8. Return `OK`.
+1. Compute the scheduling key.
+2. Register the request on the **low** dongle.
+3. Wait until the low dongle is acquired.
+4. Print `has taken a dongle`.
+5. Recompute the scheduling key.
+6. Register the request on the **high** dongle.
+7. Wait until the high dongle is acquired.
+8. Print `has taken a dongle`.
+9. Return success.
+
+The scheduling key is recomputed before registering on the second dongle because the coder only begins competing for that resource after obtaining the first one. Under FIFO this refreshes the arrival timestamp so that arbitration reflects the actual order in which coders begin waiting for the second dongle.
+
+This sequential registration is an important optimization. If a coder registered on both dongles immediately, it could remain at the front of the second dongle's queue while still blocked on the first, unnecessarily preventing another coder from using an otherwise available resource.
 
 **Why sequential registration?** If a coder pre-registered on both heaps at the start, they'd sit at the top of the high dongle's heap while still waiting on the low one. That blocks the high dongle for everyone else even though it's physically free. Registering only when actually ready to wait keeps the heap an honest reflection of who's currently competing.
 
@@ -537,7 +544,9 @@ The start barrier. Increments `ready`, then waits on `sim_cond` until `go` is se
 static int stagger_start(t_coder *c)
 ```
 
-If we have more than one coder and this coder is even-id or the last coder, sleep for half a compile time. This breaks the symmetric start where every coder would race for dongles at exactly T=0 — without it, on tight timings a long sequential "I hold A, I want B" chain can form and one coder burns out at the chain tail.
+If there is more than one coder, every even-numbered coder (and the last coder) waits for half of a compile time before entering the main loop.
+
+This small offset prevents every thread from competing for dongles at exactly the same instant immediately after the start barrier. It significantly reduces the probability of long acquisition chains forming under tight timing parameters, producing smoother scheduling without affecting correctness.
 
 ```c
 void *coder_routine(void *arg)
@@ -568,10 +577,12 @@ void wake_all(t_sim *sim)
 Broadcasts on every condition variable that any thread might be sleeping on. After this call, every coder gets a chance to re-check `sim_stopped` and exit.
 
 ```c
-static void mark_stop(t_sim *sim)
+pthread_mutex_lock(&sim->sim_mtx);
+sim->stop = 1;
+pthread_mutex_unlock(&sim->sim_mtx);
 ```
 
-Sets `sim->stop = 1` under the lock. Two-line helper, used by both burnout and "all done" paths.
+Sets `sim->stop = 1` under `sim_mtx` protection.
 
 ```c
 static int check_burnout(t_sim *sim, int i)
@@ -601,7 +612,7 @@ Same barrier as `wait_for_start` but **without** incrementing `ready`. The monit
 void *monitor_routine(void *arg)
 ```
 
-The watcher loop: every 500 µs, scan every coder for burnout, then check completion. Polling at 500 µs guarantees burnouts are detected well within the mandated 10 ms.
+The watcher loop: every 500 µs, scan every coder for burnout, then check completion. Polling at 500 µs guarantees burnouts are detected well within the mandated 10 ms constraint.
 
 ---
 
@@ -770,7 +781,7 @@ I break **circular wait** with a **resource hierarchy**: every coder always grab
 
 ### "What about starvation? Is your code starvation-free?"
 
-Under EDF, yes — as long as the parameters are feasible. The heap key under EDF is `last_compile + t_burnout`, so a coder that has been idle the longest has the smallest key and wins the next contest. No coder can be passed forever.
+Under EDF, starvation is strongly mitigated because priority is based on dynamic burnout deadlines, ensuring that coders approaching burnout progressively gain higher priority. However, fairness is still subject to system timing and contention patterns.
 
 Under FIFO it's first-come-first-served, which is also not starvation-prone in this 2-neighbor setting.
 

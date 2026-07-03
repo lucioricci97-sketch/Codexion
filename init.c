@@ -6,11 +6,9 @@
 /*   By: luricci <luricci@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/06/22 16:18:48 by luricci           #+#    #+#             */
-/*   Updated: 2026/07/02 16:18:56 by luricci          ###   ########.fr       */
+/*   Updated: 2026/07/03 17:49:59 by luricci          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
-
-
 
 #include "codexion.h"
 
@@ -20,11 +18,11 @@ static int	init_dongles(t_sim *sim)
 	int	n;
 
 	n = sim->args.n_coders;
+	i = 0;
 	sim->dongles = (t_dongle *)malloc(sizeof(t_dongle) * n);
 	if (!sim->dongles)
 		return (ERR);
 	memset(sim->dongles, 0, sizeof(t_dongle) * n);
-	i = 0;
 	while (i < n)
 	{
 		sim->dongles[i].id = i;
@@ -61,11 +59,11 @@ static int	init_coders(t_sim *sim)
 	int	n;
 
 	n = sim->args.n_coders;
+	i = 0;
 	sim->coders = (t_coder *)malloc(sizeof(t_coder) * n);
 	if (!sim->coders)
 		return (ERR);
 	memset(sim->coders, 0, sizeof(t_coder) * n);
-	i = 0;
 	while (i < n)
 	{
 		sim->coders[i].id = i + 1;
@@ -86,7 +84,7 @@ int	sim_init(t_sim *sim)
 		return (ERR);
 	if (init_coders(sim))
 		return (ERR);
-	sim->threads = (pthread_t *)malloc(sizeof(pthread_t) * sim->args.n_coders);
+	sim->threads = malloc(sizeof(pthread_t) * sim->args.n_coders);
 	if (!sim->threads)
 		return (ERR);
 	return (OK);

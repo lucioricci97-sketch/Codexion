@@ -6,10 +6,9 @@
 /*   By: luricci <luricci@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/06/22 16:19:28 by luricci           #+#    #+#             */
-/*   Updated: 2026/07/02 16:19:36 by luricci          ###   ########.fr       */
+/*   Updated: 2026/07/03 17:49:34 by luricci          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
-
 
 #include "codexion.h"
 
@@ -32,13 +31,6 @@ void	wake_all(t_sim *sim)
 	}
 }
 
-static void	mark_stop(t_sim *sim)
-{
-	pthread_mutex_lock(&sim->sim_mtx);
-	sim->stop = 1;
-	pthread_mutex_unlock(&sim->sim_mtx);
-}
-
 static int	check_burnout(t_sim *sim, int i)
 {
 	long	last;
@@ -50,7 +42,9 @@ static int	check_burnout(t_sim *sim, int i)
 	deadline = last + (long)sim->args.t_burnout * 1000L;
 	if (now_us() >= deadline)
 	{
-		mark_stop(sim);
+		pthread_mutex_lock(&sim->sim_mtx);
+		sim->stop = 1;
+		pthread_mutex_unlock(&sim->sim_mtx);
 		force_log(&sim->coders[i], "burned out");
 		wake_all(sim);
 		return (1);
@@ -60,8 +54,8 @@ static int	check_burnout(t_sim *sim, int i)
 
 static int	check_all_done(t_sim *sim)
 {
-	int	i;
 	int	done;
+	int	i;
 
 	done = 1;
 	i = 0;
@@ -75,7 +69,9 @@ static int	check_all_done(t_sim *sim)
 	}
 	if (done)
 	{
-		mark_stop(sim);
+		pthread_mutex_lock(&sim->sim_mtx);
+		sim->stop = 1;
+		pthread_mutex_unlock(&sim->sim_mtx);
 		wake_all(sim);
 	}
 	return (done);

@@ -6,22 +6,11 @@
 /*   By: luricci <luricci@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/06/22 16:18:17 by luricci           #+#    #+#             */
-/*   Updated: 2026/07/02 16:18:31 by luricci          ###   ########.fr       */
+/*   Updated: 2026/07/03 17:50:59 by luricci          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
-
-
 #include "codexion.h"
-
-static void	swap_req(t_request *a, t_request *b)
-{
-	t_request	tmp;
-
-	tmp = *a;
-	*a = *b;
-	*b = tmp;
-}
 
 static int	req_less(const t_request *a, const t_request *b)
 {
@@ -32,14 +21,17 @@ static int	req_less(const t_request *a, const t_request *b)
 
 static void	bubble_up(t_heap *h, int i)
 {
-	int	parent;
+	int			parent;
+	t_request	tmp;
 
 	while (i > 0)
 	{
 		parent = (i - 1) / 2;
 		if (req_less(&h->items[i], &h->items[parent]))
 		{
-			swap_req(&h->items[i], &h->items[parent]);
+			tmp = h->items[i];
+			h->items[i] = h->items[parent];
+			h->items[parent] = tmp;
 			i = parent;
 		}
 		else
@@ -49,23 +41,26 @@ static void	bubble_up(t_heap *h, int i)
 
 static void	sift_down(t_heap *h, int i)
 {
-	int	left;
-	int	right;
-	int	smallest;
+	int			l;
+	int			r;
+	int			s;
+	t_request	tmp;
 
 	while (1)
 	{
-		left = i * 2 + 1;
-		right = i * 2 + 2;
-		smallest = i;
-		if (left < h->size && req_less(&h->items[left], &h->items[smallest]))
-			smallest = left;
-		if (right < h->size && req_less(&h->items[right], &h->items[smallest]))
-			smallest = right;
-		if (smallest == i)
+		l = i * 2 + 1;
+		r = i * 2 + 2;
+		s = i;
+		if (l < h->size && req_less(&h->items[l], &h->items[s]))
+			s = l;
+		if (r < h->size && req_less(&h->items[r], &h->items[s]))
+			s = r;
+		if (s == i)
 			break ;
-		swap_req(&h->items[smallest], &h->items[i]);
-		i = smallest;
+		tmp = h->items[s];
+		h->items[s] = h->items[i];
+		h->items[i] = tmp;
+		i = s;
 	}
 }
 
@@ -79,21 +74,18 @@ void	heap_push(t_heap *h, int id, long key)
 	h->size++;
 }
 
-int	heap_top(t_heap *h)
-{
-	if (h->size == 0)
-		return (-1);
-	return (h->items[0].id);
-}
-
 void	heap_pop(t_heap *h)
 {
+	t_request	tmp;
+
 	if (h->size == 0)
 		return ;
 	h->size--;
 	if (h->size > 0)
 	{
-		swap_req(&h->items[0], &h->items[h->size]);
+		tmp = h->items[0];
+		h->items[0] = h->items[h->size];
+		h->items[h->size] = tmp;
 		sift_down(h, 0);
 	}
 }

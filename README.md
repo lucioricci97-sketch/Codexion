@@ -32,7 +32,7 @@ The Makefile compiles every `.c` file with `-Wall -Wextra -Werror -pthread` and 
 ./codexion <n_coders> <t_burnout> <t_compile> <t_debug> <t_refactor> <n_required> <t_cooldown> <scheduler>
 ```
 
-All values except `scheduler` are positive integers. Times are in milliseconds. `scheduler` is exactly `fifo` or `edf`.
+`n_coders` and `n_required` must be positive integers. Timing values are expressed in milliseconds and may be zero. `scheduler` must be either `fifo` or `edf`.
 
 **Examples**
 
@@ -95,14 +95,29 @@ Conditions (1)–(3) are intrinsic to the problem and cannot be removed. This pr
 
 ### Starvation prevention
 
-The classic resource hierarchy alone is deadlock-free but not necessarily *fair* — a busy coder could permanently lock out a neighbor. The subject therefore requires explicit scheduler arbitration. Each dongle owns its own small priority queue (a binary min-heap of size at most 2, since only two neighbors ever compete for the same dongle). When a coder wants both dongles, they register a request on each heap *before* attempting to take anything:
+The resource hierarchy prevents deadlocks but does not, by itself, guarantee fair access to the dongles. To ensure deterministic arbitration, every dongle owns a small binary min-heap (maximum size 2, since only its two neighboring coders can ever compete for it).
 
-- Under `fifo`, the key is the timestamp of the request (older request wins).
-- Under `edf`, the key is the burnout deadline `last_compile_start + time_to_burnout` (the most endangered coder wins).
+When a coder wants to compile, it **does not register on both dongles immediately**. Instead, the acquisition is sequential:
 
-When two requests carry the same key (the common case at T=0, where every coder's `last_compile` is the simulation start), the heap falls back to a deterministic tie-breaker: the lower coder `id` wins. This satisfies the subject's requirement of a fully deterministic EDF policy even in edge cases.
+1. Register on the lower-numbered dongle's queue.
+2. Wait until that dongle is acquired.
+3. Register on the higher-numbered dongle's queue.
+4. Wait until the second dongle is acquired.
 
-A waiting coder only acquires a dongle when it is at the top of the heap, so no coder can be indefinitely overtaken under EDF as long as the parameters are feasible.
+This design prevents a coder from occupying the front of two queues simultaneously while still waiting for the first resource, allowing other coders to continue making progress whenever possible.
+
+The priority key depends on the selected scheduler:
+
+- **FIFO:** the key is the timestamp at which the request is registered. Earlier requests have higher priority.
+- **EDF:** the key is the coder's burnout deadline:
+
+```text
+deadline = last_compile + time_to_burnout
+```
+
+The coder with the earliest deadline receives the highest priority.
+
+Whenever two requests have identical keys (a common situation immediately after the simulation starts), the heap uses the lower coder ID as a deterministic tie-breaker. This guarantees reproducible scheduling even in edge cases.
 
 ### Cooldown handling
 
@@ -120,8 +135,11 @@ The 500-microsecond poll keeps detection well under the 10 ms requirement.
 
 ### Log serialization
 
-A single `print_mtx` mutex is held around the `printf` call. While that mutex is held the code also reads the `stop` flag, so that no state line (`is compiling`, `is debugging`, ...) can sneak out after a `burned out` line. The monitor uses a separate `force_log` path that ignores the `stop` flag, since the burnout message itself must always be printed.
+All output is serialized through a dedicated `print_mtx` mutex so that log messages never interleave.
 
+Before printing a normal state message, `log_state()` briefly locks `sim_mtx` while still holding `print_mtx` to read the global `stop` flag. If the simulation has already ended, the function aborts without printing anything. This guarantees that no normal state (`is compiling`, `is debugging`, etc.) can appear after a burnout has been reported.
+
+The monitor thread uses a dedicated `force_log()` function that intentionally bypasses this stop check, ensuring that the mandatory `burned out` message is always printed exactly once.
 ---
 
 ## Thread synchronization mechanisms
@@ -157,13 +175,22 @@ Because every path respects this order, no inversion is possible, so no mutex-le
 
 ### Start barrier
 
-Right after creation, each coder thread and the monitor thread block on `sim.sim_cond` until the main thread signals `go = 1`. The main thread waits until every coder has reported `ready`, then stamps every `last_compile` to the simulation start time and broadcasts the start signal. This guarantees that no coder is judged for burnout before time 0.
+Immediately after creation, every coder thread increments the shared `ready` counter and waits on `sim.sim_cond`. The monitor thread also waits on the same condition variable, although it does not contribute to the `ready` count.
+
+The main thread waits until every coder has reached this synchronization point. Only then does it:
+
+1. Record the official simulation start timestamp.
+2. Initialize every coder's `last_compile` timestamp to that same value.
+3. Set `go = 1`.
+4. Broadcast `sim.sim_cond`.
+
+This guarantees that every thread begins executing from the same reference time and prevents the monitor from detecting an immediate burnout before the simulation has officially started.
 
 ### Stop signaling
 
 When the simulation must end (burnout or all coders reached `n_required` compiles), the monitor:
 
 1. Sets `stop = 1` under `sim_mtx`.
-2. Broadcasts `sim_cond` and every `dongle.cond` (`wake_all` in `monitor.c`).
+2. Broadcasts the global `sim_cond` and every per-dongle `dongle.cond` through `wake_all()`.
 
 Any coder blocked in `pthread_cond_wait` wakes up, sees the stop flag, and unwinds cleanly — no thread is ever left stuck, no memory is leaked.

@@ -6,7 +6,7 @@
 /*   By: luricci <luricci@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/06/22 16:15:52 by luricci           #+#    #+#             */
-/*   Updated: 2026/07/02 16:17:28 by luricci          ###   ########.fr       */
+/*   Updated: 2026/07/03 17:47:19 by luricci          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -18,13 +18,12 @@
 # include <stdlib.h>
 # include <string.h>
 # include <sys/time.h>
-# include <time.h>
 # include <unistd.h>
 
-# define OK   0
-# define ERR  1
-# define FIFO 0
-# define EDF  1
+# define OK		0
+# define ERR	1
+# define FIFO	0
+# define EDF	1
 
 typedef struct s_args
 {
@@ -50,9 +49,9 @@ typedef struct s_heap
 	int			size;
 }	t_heap;
 
-typedef struct s_sim		t_sim;
-typedef struct s_coder		t_coder;
-typedef struct s_dongle		t_dongle;
+typedef struct s_sim	t_sim;
+typedef struct s_coder	t_coder;
+typedef struct s_dongle	t_dongle;
 
 struct s_dongle
 {
@@ -94,22 +93,15 @@ struct s_sim
 };
 
 int		parse_args(int ac, char **av, t_args *args);
-
 int		sim_init(t_sim *sim);
 void	sim_destroy(t_sim *sim);
-
 void	heap_push(t_heap *h, int id, long key);
-int		heap_top(t_heap *h);
 void	heap_pop(t_heap *h);
-
 int		acquire_dongles(t_coder *c);
-void	release_dongles(t_coder *c);
-
+int		release_one(t_dongle *d);
 void	*coder_routine(void *arg);
-
 void	*monitor_routine(void *arg);
 void	wake_all(t_sim *sim);
-
 long	now_us(void);
 int		log_state(t_coder *c, const char *msg);
 void	force_log(t_coder *c, const char *msg);
