@@ -333,18 +333,12 @@ A `usleep`-based sleep that **wakes up every 500 µs** to check whether the simu
 We must implement a real binary min-heap (the subject forbids using a standard library queue). The heap key is **smaller = higher priority**.
 
 ```c
-static void swap_req(t_request *a, t_request *b)
-```
-
-Three-line value swap.
-
-```c
 static int req_less(const t_request *a, const t_request *b)
 ```
 
 The ordering predicate the heap uses everywhere. Returns true when `a` should sit above `b`. Primary order: smaller key wins (= older FIFO arrival or nearer EDF deadline). When keys tie, the lower `id` wins.
 
-**Why the tie-breaker matters.** The subject explicitly requires a fully deterministic EDF policy "even in edge cases" where two deadlines collide. The most common collision is T=0: `stamp_starts` writes the same `sim->start` into every coder's `last_compile`, so every EDF key is identical. Without a tie-breaker the heap would leave requests in thread-scheduler order — nondeterministic across runs. Falling back to "lower id wins" guarantees a reproducible startup pattern.
+**Why the tie-breaker matters.** The subject explicitly requires a fully deterministic EDF policy "even in edge cases" where two deadlines collide. The most common collision is T=0: the main thread writes the same `sim->start` into every coder's `last_compile`, so every EDF key is identical. Without a tie-breaker the heap would leave requests in thread-scheduler order — nondeterministic across runs. Falling back to "lower id wins" guarantees a reproducible startup pattern.
 
 ```c
 static void bubble_up(t_heap *h, int i)
@@ -365,16 +359,10 @@ void heap_push(t_heap *h, int id, long key)
 Adds a new request and bubbles it up. If the heap is full (size 2), it silently drops — for our use case this can't happen because only two neighbors ever push to a given heap.
 
 ```c
-int heap_top(t_heap *h)
-```
-
-Returns the **id** of the current top, or `-1` if empty. The caller uses this to ask "am I at the front of the queue?".
-
-```c
 void heap_pop(t_heap *h)
 ```
 
-Swaps top with last, decreases size, sifts down. Classic pattern.
+Swaps top with last, decreases size, sifts down. The heap is accessed directly via `h->items[0].id` to check the front of the queue. Classic pattern.
 
 For our problem the heap has at most 2 elements so bubble/sift do almost nothing, but the algorithm is general and correct.
 
@@ -625,18 +613,12 @@ static int spawn_threads(t_sim *sim)
 Creates the `n_coders` coder threads, then the monitor thread. Increments `started`/`mon_started` so cleanup knows what was actually created.
 
 ```c
-static void stamp_starts(t_sim *sim)
-```
-
-Once we know the simulation's official start time, write it into every coder's `last_compile`. Without this, the monitor would see `last_compile = 0` and immediately think every coder has been idle since 1970.
-
-```c
 static void start_simulation(t_sim *sim)
 ```
 
 1. Spin (with `usleep(500)`) until `ready >= n_coders`.
 2. Record `sim->start`.
-3. Stamp every coder's `last_compile`.
+3. Initialize every coder's `last_compile` to `sim->start` (under each coder's mutex). Without this, the monitor would see `last_compile = 0` and immediately think every coder has been idle since 1970.
 4. Set `go = 1` and broadcast — all coders and the monitor wake up.
 5. Unlock.
 
@@ -760,7 +742,7 @@ Because two coder threads could both try to take the same dongle at the same tim
 
 ### "Why not just use atomic variables, no mutex?"
 
-Because the operation isn't a single read or write. We check `heap_top == my_id && available && cooldown_done`, then pop the heap and set available. That's many variables. Only a mutex can group them into a single critical section.
+Because the operation isn't a single read or write. We check `d->queue.items[0].id == c->id && available && cooldown_done`, then pop the heap and set available. That's many variables. Only a mutex can group them into a single critical section.
 
 ### "Why a condition variable instead of looping with `usleep`?"
 
@@ -853,7 +835,7 @@ Debug tool: compile with `-g`, run with `gdb`, then `thread apply all bt` when i
 
 ### "Coders burn out way too early"
 
-If you see a burnout at timestamp 0 or 1, you forgot to stamp `last_compile = sim->start` before broadcasting `go`. The monitor reads `last_compile = 0` and decides everyone is way past the deadline. The fix is `stamp_starts(sim)` in `main.c`.
+If you see a burnout at timestamp 0 or 1, you forgot to initialize `last_compile = sim->start` before broadcasting `go`. The monitor reads `last_compile = 0` and decides everyone is way past the deadline. The fix is to set every coder's `last_compile` to `sim->start` in `start_simulation` (in `main.c`).
 
 If you see a burnout right at the edge of the deadline (e.g. `400 X burned out` with `t_burnout = 400`) and it happens randomly across runs of the same parameters, you're hitting the classic wait-chain problem: every coder grabs their low at T=0 and then queues up serially on each others' highs. The fix is the half-compile-time `stagger_start` on even-id (and last) coders in `coder.c`.
 

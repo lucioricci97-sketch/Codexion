@@ -744,7 +744,6 @@ int   parse_args(int ac, char **av, t_args *args);
 int   sim_init(t_sim *sim);
 void  sim_destroy(t_sim *sim);
 void  heap_push(t_heap *h, int id, long key);
-int   heap_top(t_heap *h);
 void  heap_pop(t_heap *h);
 int   acquire_dongles(t_coder *c);
 void  release_dongles(t_coder *c);
@@ -1070,9 +1069,6 @@ int precise_sleep(t_coder *c, long us)
   <div class="body">
     <pre><code class="language-c">#include "codexion.h"
 
-static void swap_req(t_request *a, t_request *b) {
-    t_request tmp = *a; *a = *b; *b = tmp;
-}
 
 static int req_less(const t_request *a, const t_request *b) {
     if (a-&gt;key != b-&gt;key) return (a-&gt;key &lt; b-&gt;key);
@@ -1082,6 +1078,8 @@ static int req_less(const t_request *a, const t_request *b) {
 static void bubble_up(t_heap *h, int i)
 {
     int parent;
+    t_request tmp;
+    t_request tmp;
     while (i &gt; 0) {
         parent = (i - 1) / 2;
         if (req_less(&amp;h-&gt;items[i], &amp;h-&gt;items[parent])) {
@@ -1094,6 +1092,8 @@ static void bubble_up(t_heap *h, int i)
 static void sift_down(t_heap *h, int i)
 {
     int left, right, smallest;
+    t_request tmp;
+    t_request tmp;
     while (1) {
         left = i * 2 + 1;
         right = i * 2 + 2;
@@ -1114,10 +1114,6 @@ void heap_push(t_heap *h, int id, long key) {
     h-&gt;size++;
 }
 
-int heap_top(t_heap *h) {
-    if (h-&gt;size == 0) return (-1);
-    return (h-&gt;items[0].id);
-}
 
 void heap_pop(t_heap *h) {
     if (h-&gt;size == 0) return ;
@@ -1149,11 +1145,7 @@ void heap_pop(t_heap *h) {
       <summary>📖 Line-by-line walkthrough</summary>
       <div class="body">
         <div class="anno-code">
-<div class="ln h">static void swap_req(t_request *a, t_request *b)</div>
-<div class="ln">{</div>
-<div class="ln">    t_request tmp = *a; *a = *b; *b = tmp;</div>
-<div class="an">Three-step value swap. Used by both bubble-up and sift-down.</div>
-<div class="ln">}</div>
+
 
 <div class="ln h">static int req_less(const t_request *a, const t_request *b)</div>
 <div class="an">Ordering predicate used everywhere the heap compares two requests. Returns 1 if <code>a</code> should sit above <code>b</code> in the min-heap.</div>
@@ -2093,15 +2085,6 @@ static int spawn_threads(t_sim *sim)
     return (OK);
 }
 
-static void stamp_starts(t_sim *sim)
-{
-    int i = 0;
-    while (i &lt; sim-&gt;args.n_coders) {
-        pthread_mutex_lock(&amp;sim-&gt;coders[i].mtx);
-        sim-&gt;coders[i].last_compile = sim-&gt;start;
-        pthread_mutex_unlock(&amp;sim-&gt;coders[i].mtx);
-        i++;
-    }
 }
 
 static void start_simulation(t_sim *sim)
@@ -2113,7 +2096,7 @@ static void start_simulation(t_sim *sim)
         usleep(500);
     }
     sim-&gt;start = now_us();
-    stamp_starts(sim);
+    /* inline initialization */
     sim-&gt;go = 1;
     pthread_cond_broadcast(&amp;sim-&gt;sim_cond);
     pthread_mutex_unlock(&amp;sim-&gt;sim_mtx);
@@ -2213,7 +2196,7 @@ int main(int ac, char **av)
 <div class="ln">    }</div>
 <div class="ln">    sim-&gt;start = now_us();</div>
 <div class="an">Officially mark T=0 right before releasing everyone.</div>
-<div class="ln">    stamp_starts(sim);</div>
+<div class="ln">    /* inline initialization */</div>
 <div class="an">Initialize all <code>last_compile</code>s.</div>
 <div class="ln">    sim-&gt;go = 1;</div>
 <div class="ln">    pthread_cond_broadcast(&amp;sim-&gt;sim_cond);</div>
@@ -2796,7 +2779,7 @@ Click an answer to reveal the verdict and explanation. Use the
   <h4>"Coders burn out instantly at T+0"</h4>
   You forgot to stamp <code>last_compile = sim-&gt;start</code> before broadcasting <code>go=1</code>.
   The monitor reads <code>last_compile = 0</code> and decides the coder has been idle since 1970.
-  Fix: <code>stamp_starts(sim)</code> in <code>main.c</code>.
+  Fix: inline the <code>last_compile</code> initialization before broadcasting <code>go=1</code>.
 </div>
 
 <div class="callout bad">
